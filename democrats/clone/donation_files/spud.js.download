@@ -1,0 +1,257 @@
+// client-side SPUD (via AJAX)
+// utils/ajax/ajax.class.js MUST be included before this file
+// see dev wiki for documentation
+
+// set the spud key or keys with values taken from the query string, if they exist
+// 'fields' can be either a string or an array of strings
+
+var LOCALE_COUNTRY_LISTENER;
+
+function spud_set_from_url(fields) {
+    if (!fields || !window.location.search)
+        return;
+
+    if (typeof(fields) == "string")
+        fields = [fields];
+
+    query_values = {};
+
+    // Regex taken from:
+    // http://www.bennadel.com/blog/695-Ask-Ben-Getting-Query-String-Values-In-JavaScript.htm
+    window.location.search.replace(
+        new RegExp("([^?=&]+)(=([^&]*))?", "g"), function($0, $1, $2, $3) {query_values[$1] = $3;}
+    );
+
+    var spud_set_if_present = function(field) {
+        if (query_values[field])
+            spud_set({field: field, value: query_values[field]});
+    };
+
+    // if Array has been given tons of extra properties by a supporting library
+    // that we'd like to ignore, that library should also provide an Array.each
+    // function that ignores them
+    if (typeof(fields.each) == "function") {
+        fields.each(spud_set_if_present);
+    } else {
+        for (var i = 0, field; field = fields[i++];) {
+            spud_set_if_present(field);
+        }
+    }
+}
+
+function spud_set_from_form(form_elements) {
+    values = {};
+    for (key in form_elements) {
+        element = document.getElementById(form_elements[key]);
+        if (element && element.value != undefined) {
+            values[key] = element.value;
+        }
+    }
+
+    _spud_request_multiple({type: "setm"}, values);
+}
+
+function spud_populate(form_elements, after_callback, after_callback_param) {
+    var fields = [];
+    for (key in form_elements)
+        fields[fields.length] = key;
+
+    if (after_callback == undefined) {
+        after_callback = function(p) {};
+    }
+
+    spud_get({
+        field: fields,
+        callback: function(values, elements) {
+            for (key in values) {
+                var element = elements[key];
+                if (typeof(element) == 'string')
+                    element = document.getElementById(element);
+
+                if (values[key] && element && element.value != undefined)
+                    element.value = values[key];
+            }
+            after_callback(after_callback_param);
+        },
+        callback_param: form_elements
+    });
+}
+
+function spud_get(args) {
+    if (!args.field) {
+        _spud_error ('spud_get requires a "field" parameter');
+        return;
+    }
+    if (!args.callback) {
+        _spud_error ('spud_get requires the "callback" parameter be set to a valid function');
+        return;
+    }
+
+    var type;
+    if (typeof(args.field) == "object" && typeof(args.field.join) == "function") {
+        args.field = args.field.join(",");
+        type = "getm";
+    } else {
+        type = "get";
+    }
+
+    _spud_request ({type: type, field: args.field, callback: args.callback, callback_param: args.callback_param});
+}
+
+function spud_set(args) {
+
+    if (!args.field) {
+        _spud_error ('spud_set requires a "field" parameter');
+        return;
+    }
+    if (!args.value) {
+        _spud_error ('spud_set requires a "value" parameter');
+        return;
+    }
+
+    args.type = "set";
+    _spud_request (args);
+}
+
+function spud_get_custom(args) {
+    if (!args.app) {
+        _spud_error ('spud_get_custom requires a "app" parameter');
+        return;
+    }
+    if (!args.field) {
+        _spud_error ('spud_get_custom requires a "field" parameter');
+        return;
+    }
+    if (!args.callback) {
+        _spud_error ('spud_get_custom requires the "callback" parameter be set to a valid function');
+        return;
+    }
+
+    _spud_request ({type: "get_custom", app: args.app, field: args.field, callback: args.callback, callback_param: args.callback_param});
+}
+
+function spud_set_custom(args) {
+    if (!args.app) {
+        _spud_error ('spud_set_custom requires a "app" parameter');
+        return;
+    }
+    if (!args.field) {
+        _spud_error ('spud_set_custom requires a "field" parameter');
+        return;
+    }
+    if (!args.value) {
+        _spud_error ('spud_set_custom requires a "value" parameter');
+        return;
+    }
+    if (!args.ttl) {
+        _spud_error ('spud_set_custom requires a "ttl" parameter');
+        return;
+    }
+
+    _spud_request ({type: "set_custom", app: args.app, field: args.field, value: args.value, ttl: args.ttl});
+}
+
+function _spud_request(args) {
+    // encode the post params we want to send
+    var post = "";
+    for (field in args) {
+        if (field == 'callback' || field == 'callback_param') {
+            continue;
+        }
+        if (post) {
+            post += "&";
+        }
+        post += encodeURIComponent(field) + "=" + encodeURIComponent(args[field]);
+    }
+
+    // do the ajax request
+    var ajax = new ajax_class({
+        ajax_url: '/page/spud',
+        timeout: 10000,
+        response_type: "text",
+        method: "POST",
+        post_vars: post,
+        success_handler: _spud_success_handler,
+        failure_handler: _spud_failure_handler,
+        extended_data: args
+    });
+    ajax.comm_with_server("");
+}
+
+function _spud_request_multiple(options, values) {
+    var post = "";
+
+    // Set options
+    for (field in options) {
+        if (field == 'callback' || field == 'callback_param') {
+            continue;
+        }
+        if (post) {
+            post += "&";
+        }
+        post += encodeURIComponent(field) + "=" + encodeURIComponent(options[field]);
+    }
+
+    // Set values
+    for (field in values) {
+        if (post) {
+            post += "&";
+        }
+        post += encodeURIComponent('fields['+field+']') + "=" + encodeURIComponent(values[field]);
+    }
+
+    // do the ajax request
+    var ajax = new ajax_class({
+        ajax_url: '/page/spud',
+        timeout: 10000,
+        response_type: "text",
+        method: "POST",
+        post_vars: post,
+        extended_data: options,
+        success_handler: _spud_success_handler,
+        failure_handler: _spud_failure_handler
+    });
+    ajax.comm_with_server("");
+}
+
+function _spud_success_handler (result, ajax_request) {
+    // if there's a callback, process the results
+    if (ajax_request.extended_data && ajax_request.extended_data.callback) {
+        // the first line should be a status code
+        var status;
+        var value = false;
+        var lbPos = result.indexOf("\n");
+        if (lbPos > 1) {
+            status = result.substring(0, lbPos);
+            if (status == 200) {
+                if (ajax_request.extended_data.type == 'set' || ajax_request.extended_data.type == 'set_custom') {
+                    value = true;
+                } else if (ajax_request.extended_data.type == 'getm') {
+                    eval("value = " + result.substring(lbPos + 1));
+                } else {
+                    value = result.substring(lbPos + 1);
+                }
+            } // else, we'll let the 'false' value fall through
+        }
+
+        // do the callback
+        ajax_request.extended_data.callback(value, ajax_request.extended_data.callback_param);
+        if(LOCALE_COUNTRY_LISTENER != undefined){
+            LOCALE_COUNTRY_LISTENER.fire();
+        }
+    }
+}
+
+function _spud_failure_handler (text, status, ajax_request) {
+    // if there's a callback, just call it with a value of 'false'.  otherwise, do nothing.
+    if (ajax_request.extended_data && ajax_request.extended_data.callback) {
+        ajax_request.extended_data.callback(false, ajax_request.extended_data.callback_param);
+    }
+}
+
+function _spud_error (msg) {
+    if(console){
+        console.log('ERROR: ' + msg);
+    }
+}
+

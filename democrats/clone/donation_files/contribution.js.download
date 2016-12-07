@@ -1,0 +1,974 @@
+/*****************************************************
+*   contribution.js
+*   Javascript used on the public facing contribution
+*   pages and in the Control Panel (page_edit.php)
+*
+*****************************************************/
+
+// Make sure the bQuery object is set correctly (needed for page_edit.php)
+if (typeof(bQuery) != 'function') {
+    window.bQuery = jQuery.noConflict();
+}
+
+BSD.namespace("BSD.contribution");
+
+BSD.contribution.cc_button_handler = function(e) {
+    var card_fields = bQuery("#cc_number, #cc_expir_month, #cc_expir_year, #cc_cvv");
+    var payment_options = bQuery("#payment_options");
+    var ach_payment_info = bQuery("#ach_payment_info");
+    var ach_canada_payment_info = bQuery("#ach_canada_payment_info");
+    var paypal_notice = bQuery("#paypal_notice");
+
+    var radioId = bQuery(e.target).attr("id");
+
+    payment_options.hide();
+    paypal_notice.hide();
+    ach_payment_info.hide();
+    ach_canada_payment_info.hide();
+    BSD.contribution.maestro_solo_fields().hide();
+
+    if (radioId == "cc_pp") {
+        // Hide CC & ACH fields
+        paypal_notice.show();
+        card_fields.attr('disabled', true);
+    } else if (radioId == "cc_so" || radioId == "cc_ma") {
+        // Maestro/Solo require three extra fields
+        payment_options.show();
+        BSD.contribution.maestro_solo_fields().show();
+        card_fields.attr('disabled', false);
+    } else if (radioId == "cc_ac") {
+        // Hide CC & PayPal fields
+        ach_payment_info.show();
+        card_fields.attr('disabled', true);
+    }else if (radioId == "cc_cc") {
+        // Hide CC & PayPal fields
+        ach_canada_payment_info.show();
+        card_fields.attr('disabled', true);
+    } else {
+        payment_options.show();
+        card_fields.attr('disabled', false);
+    }
+};
+
+BSD.contribution.maestro_solo_fields = function() {
+    function _fieldsExist() {
+        return bQuery("#maestro_solo_fields").length != 0;
+    }
+
+    function _toggleVisibility(value) {
+        if(_fieldsExist()) {
+            bQuery("#maestro_solo_fields").css("display", value);
+        }
+    }
+
+    function _toggleDisabillity(value) {
+        if(_fieldsExist()) {
+            bQuery('#cc_start_month, #cc_start_year, #cc_issue_number').attr('disabled', value);
+        }
+    }
+
+    function _supportsCreditCards(card) {
+        return bQuery("#" + card).length != 0;
+    }
+
+    function _coundCreditCards() {
+        return bQuery("input.cc_type_cd").length;
+    }
+
+    function _supportsOnlyMaestroAndSolo() {
+        return _supportsCreditCards('cc_ma') &&
+            _supportsCreditCards('cc_so') &&
+            _coundCreditCards() == 2;
+    }
+
+    function _isCardChecked(card) {
+        if(_supportsCreditCards(card)) {
+            return bQuery("#" + card).attr('checked');
+        }
+        return false;
+    }
+
+    function _log(data) {
+        if(console) {
+            console.log(data);
+        }
+    }
+
+    return {
+        setInitialState: function() {
+            if(_fieldsExist()) {
+                this.showIf(
+                    _supportsOnlyMaestroAndSolo() ||
+                    _isCardChecked('cc_ma') ||
+                    _isCardChecked('cc_so')
+                );
+            }
+        },
+
+        show: function() {
+            _toggleVisibility(document.all ? "block" : "table-row");
+            _toggleDisabillity(false); // enable
+        },
+
+        hide: function() {
+            _toggleVisibility("none");
+            _toggleDisabillity(true); // disable
+        },
+
+        showIf: function(condition) {
+            if(condition) {
+                this.show();
+            } else {
+                this.hide();
+            }
+        }
+    };
+}
+
+
+/**
+ * Toggles the custom country fields to visible or hidden
+ */
+
+BSD.contribution.custom_country_field_toggle = function() {
+    var country = document.getElementById('country');
+    var default_country = document.getElementById('default_country');
+
+    var cust_is_enabled_flags = [
+        document.getElementById('custom_country_field_enabled_1'),
+        document.getElementById('custom_country_field_enabled_2')
+    ];
+
+    var cust_country_tables = [
+        document.getElementById('custom_country_field_table_1'),
+        document.getElementById('custom_country_field_table_2')
+    ];
+
+    if (country && default_country) {
+
+        for (var i = 0; i < cust_country_tables.length; i++) {
+
+            if (!cust_country_tables[i] || !cust_is_enabled_flags[i]) {
+                continue;
+            }
+
+            if (cust_is_enabled_flags[i].value == 0 ||
+                (cust_is_enabled_flags[i].value == 1 &&
+                 country.value == default_country.value)) {
+
+                bQuery(cust_country_tables[i]).hide();
+            }  else {
+                bQuery(cust_country_tables[i]).show();
+            }
+        }
+    }
+}
+
+BSD.contribution.errorHighlightLabel = function  (obj) {
+  // this little JS hack highlights the last <label> added to the page.  this works around a limitation of QuickForm error display
+  if (document.getElementsByTagName) {
+    var elements = document.getElementsByTagName("label");
+    if (elements && elements.length > 0) {
+      elements.item(elements.length - 1).className="error";
+    }
+  }
+}
+
+BSD.contribution.clearother = function () {
+    document.contribution.amount_other.value = "";
+}
+
+BSD.contribution.find_obj = function (n, d) {
+    var p,i,x;
+    if (!d)
+        d = document;
+    if ((p = n.indexOf("?")) > 0 && parent.frames.length) {
+        d = parent.frames[n.substring(p+1)].document;
+        n = n.substring(0,p);
+    }
+    if (!(x = d[n]) && d.all)
+        x = d.all[n];
+    for (i = 0; !x && i < d.forms.length; i++)
+        x = d.forms[i][n];
+    for (i = 0; !x && d.layers && i<d.layers.length; i++)
+        x = BSD.contribution.find_obj(n,d.layers[i].document);
+    if (!x && d.getElementById)
+        x = d.getElementById(n);
+    return x;
+}
+
+BSD.contribution.isFunction = function (a) {
+    return typeof a == "function";
+}
+
+BSD.contribution.isObject = function (a){
+     return (typeof a == "object" && !!a) || BSD.contribution.isFunction(a);
+ }
+
+BSD.contribution.round_decimals = function (original_number, decimals) {
+    var result1 = original_number * Math.pow(10, decimals)
+    var result2 = Math.round(result1)
+    var result3 = result2 / Math.pow(10, decimals)
+    return BSD.contribution.pad_with_zeros(result3, decimals)
+}
+
+BSD.contribution.pad_with_zeros = function (rounded_value, decimal_places) {
+
+    // Convert the number to a string
+    var value_string = rounded_value.toString();
+
+    // Locate the decimal point
+    var decimal_location = value_string.indexOf(".");
+
+    // Is there a decimal point?
+    if (decimal_location == -1) {
+
+        // If no, then all decimal places will be padded with 0s
+        decimal_part_length = 0;
+
+        // If decimal_places is greater than zero, tack on a decimal point
+        value_string += decimal_places > 0 ? "." : "";
+    }
+    else {
+
+        // If yes, then only the extra decimal places will be padded with 0s
+        decimal_part_length = value_string.length - decimal_location - 1;
+    }
+
+    // Calculate the number of decimal places that need to be padded with 0s
+    var pad_total = decimal_places - decimal_part_length;
+
+    if (pad_total > 0) {
+
+        // Pad the string with 0s
+        for (var counter = 1; counter <= pad_total; counter++)
+            value_string += "0";
+        }
+    return value_string
+}
+
+BSD.contribution.total_tickets = function (intl_currency_symbol) {
+
+    // do we have the currency data loaded already?  if not, load it and then recall this function
+    var currency_data = BSD.utils.currency_manager.get_currency(intl_currency_symbol);
+
+    if(currency_data == undefined) {
+        BSD.utils.currency_manager.load_currency(
+            intl_currency_symbol,
+            {
+                success: function() {
+                    BSD.contribution.total_tickets(intl_currency_symbol);
+                },
+                failure: function() {
+                    // do nothing
+                }
+            }
+        );
+        return;
+    }
+    var currency = BSD.utils.currency(currency_data);
+
+    var total_cost = 0;
+    var total_tickets = 0;
+    var q = BSD.contribution.find_obj("t_q");
+    var amountfield = BSD.contribution.find_obj("amount");
+    var quantity = false;
+    var x = 0;
+    while(quantity = BSD.contribution.find_obj("q_"+x)){
+
+        if(quantity.value != "" && !isNaN(quantity.value) && Math.floor(quantity.value) > 0){
+            var amount = BSD.contribution.find_obj("c_"+x);
+
+            total_cost = total_cost + (Math.floor(quantity.value)*amount.value)
+            total_tickets += parseInt(Math.floor(quantity.value));
+            quantity.value = Math.floor(quantity.value);
+        }
+        if(isNaN(quantity.value) || Math.floor(quantity.value) < 0) { quantity.value = "" }
+        x++;
+    }
+
+    // Deal with the ueer entered amount
+    if(bQuery('#user_entered_amt').length > 0){
+        var user_entered_amt = bQuery('#user_entered_amt').val();
+        matches = user_entered_amt.match(/([0-9,.]*?)([,.]\d{1,2})?$/g);
+
+        if(matches){
+            user_entered_amt =  matches[0];
+            user_entered_amt = user_entered_amt.replace(/,/g, '');
+            user_entered_amt = parseFloat(user_entered_amt);
+
+            if(!isNaN(user_entered_amt)){
+                total_cost = total_cost + user_entered_amt;
+            }
+        }
+    }
+
+    amountfield.value = BSD.contribution.round_decimals(total_cost,2);
+    if(total_tickets > 1 || total_tickets == 0) {
+        q.innerHTML = total_tickets + ' ' + total_label.pluralize() + " , " + currency.format_number(total_cost, "%n");
+    } else {
+        q.innerHTML = total_tickets + ' ' + total_label.pluralize().singularize() + " , " + currency.format_number(total_cost, "%n");
+    }
+}
+
+BSD.contribution.fireEvent = function(elem, event) {
+    if (elem.fireEvent) {
+        // If IE, use the builtin fireEvent
+        elem.fireEvent("on" + event);
+    } else {
+        // Othwerwise use the DOM Level 2 method of doing it
+        var e;
+        if (event == "click") {
+            e = document.createEvent("MouseEvents");
+            e.initMouseEvent("click", true, true, window,
+                             0, 0, 0, 0, 0, false, false, false, false,
+                             0, null);
+        } else {
+            e = document.createEvent("HTMLEvents");
+            e.initEvent(event, true, true);
+        }
+        elem.dispatchEvent(e);
+    }
+}
+
+function get_region_row(){
+    var region = bQuery(this.region_el)[0];
+    return (region) ? region.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode : null;
+}
+
+function get_postal_row(){
+    var zip = bQuery(this.postal_el)[0];
+    return (zip) ? zip.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode : null;
+}
+
+function updateHonoreeSection(selectedIndex) {
+
+    switch (selectedIndex) {
+    case 0: //Nothing selected
+        bQuery('.honoree').hide();
+        bQuery('.honoree input').val('');
+        bQuery('.honoree select').not('#honoree_country').val('');
+
+    break;
+    case 1: //In honor of...
+        bQuery('.honoree').show();
+        bQuery('#honoree_recipient_name').hide();
+        bQuery('#honoree_recipient_name input').val('');
+
+        break;
+    case 2: //In memory of...
+        bQuery('.honoree').show();
+        bQuery('#honoree_recipient_name').show();
+
+        break;
+    }
+}
+
+BSD.contribution.spud_country = function(country) {
+    bQuery('#country').val(country);
+}
+
+bQuery(document).ready(function() {
+
+    /**
+     * Some of these initializations depend on the settings of the 'country' field
+     * so we need to allow spud to attempt to set the field before we perform actions
+     * based on 'country's value
+     */
+    function postSpudOperations(obj) {
+
+        // This toggles the credit card number / expir fields if someone
+        // selects the PayPal radio button -- Josh K
+        bQuery("input.cc_type_cd").click(BSD.contribution.cc_button_handler);
+        bQuery("input.cc_type_cd").each(function(idx, elem){
+            if(elem.checked)
+                BSD.contribution.fireEvent(elem, "click");
+        });
+        // Maestro requires 3dsecure which currently requires JS so display this field
+        if(bQuery("#cc_ma").length != 0) {
+            bQuery("#cc_ma").css("display", "inline");
+            bQuery("#cc_label_ma").css("display", "inline");
+        }
+
+        BSD.contribution.maestro_solo_fields().setInitialState();
+
+        bQuery("#country").change(BSD.contribution.custom_country_field_toggle);
+        BSD.contribution.custom_country_field_toggle();
+
+
+
+        bQuery('form#contribution').submit(function(e) {
+            bQuery('#processbutton').attr('disabled', 'disabled');
+
+            var fields = [
+                'firstname',
+                'lastname',
+                'addr1',
+                'addr2',
+                'city',
+                'state_cd',
+                'zip',
+                'email',
+                'phone',
+                'employer',
+                'occupation'
+            ];
+
+            var fieldsData = {};
+
+            bQuery.each(fields, function(index, name){
+                var val = bQuery('form#contribution [name=' + name + ']').val();
+
+                if (val !== undefined) {
+                    fieldsData[name] = val;
+                }
+            });
+
+            bQuery.bsd.spud(
+                'set',
+                fieldsData,
+                {async: bQuery('form#contribution').hasClass('js-uqd-form-active')}
+            );
+
+            if(bQuery("#honoree_in_memoriam").length && bQuery("#honoree_in_memoriam").get(0).selectedIndex == 0) {
+                bQuery('.honoree input').val('');
+                bQuery('.honoree select').val('');
+            }
+        });
+
+        var contrib_locale = new locale({
+            get_region_row: get_region_row,
+            get_postal_row: get_postal_row
+        });
+
+        contrib_locale.get_country().change(function(e){
+            contrib_locale.load();
+        });
+
+        contrib_locale.load();
+
+        // add a listener to deal with region level postal exceptions
+        if(contrib_locale.region_postal_exceptions.length > 0){
+            bQuery('#state_cd').change(function(event){
+                contrib_locale.handle_postal_exceptions(event, contrib_locale);
+            });
+        }
+
+        var contrib_employer_locale = new locale({
+            get_region_row: get_region_row,
+            get_postal_row: get_postal_row,
+            country_el: 'employer_country',
+            region_el: 'employer_state_cd',
+            postal_el: 'employer_zip'
+        });
+
+        contrib_employer_locale.get_country().change(function(e){
+            contrib_employer_locale.load();
+        });
+
+        var honoree_locale = new locale({
+            get_region_row: get_region_row,
+            get_postal_row: get_postal_row,
+            country_el: 'honoree_country',
+            region_el: 'honoree_state_cd',
+            postal_el: 'honoree_zip'
+        });
+
+        honoree_locale.get_country().change(function(e){
+            honoree_locale.load();
+        });
+
+
+
+        // add a listener to deal with region level postal exceptions
+        if(contrib_employer_locale.region_postal_exceptions.length > 0){
+            bQuery("#employer_state_cd").change(function(e){
+                contrib_employer_locale.handle_postal_exceptions(e, contrib_employer_locale);
+            });
+        }
+
+
+        if(bQuery("#honoree_in_memoriam").length) {
+            updateHonoreeSection(bQuery("#honoree_in_memoriam").get(0).selectedIndex);
+            bQuery("#honoree_in_memoriam").change(function(e){
+                updateHonoreeSection(this.selectedIndex);
+            });
+        }
+
+
+        if(typeof loadSourceCodes == 'function') {
+            loadSourceCodes();
+        }
+    };
+
+    /**
+     * spud_fill_contribution_form will only be defined on first page load.  subsequent page loads should
+     * not be using spud since the user should have submitted data already.
+     */
+    try {
+        spud_fill_contribution_form(postSpudOperations);
+    } catch(e) {
+        postSpudOperations();
+    }
+
+    BSD.contribution.randomString = function (length) {
+        var result = '';
+        var chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        for (var i = length; i > 0; --i) result += chars[Math.round(Math.random() * (chars.length - 1))];
+        return result;
+    }
+
+    if(bQuery("input[name=submission_key]").val() == '') {
+        var randomString = BSD.contribution.randomString(32);
+        bQuery("input[name=submission_key]").val(randomString);
+    }
+
+    if(typeof bQuery("input[name=k-ris-sid]").val() !== 'undefined' && typeof bQuery("input[name=k-ris-mid]").val() !== 'undefined' && bQuery("input[name=k-ris-mid]").val != '') {
+        var kRisSId = BSD.contribution.randomString(32);
+        bQuery("input[name=k-ris-sid]").val(kRisSId);
+        var kRisMId = bQuery("input[name=k-ris-mid]").val();
+        var iframe =  '<iframe width="1" height="1" frameborder="0" scrolling="no" src="/images/Contribution/Misc/logo.htm?m='+kRisMId+'&s='+kRisSId+'"><img width="1" height="1" src="/images/Contribution/Misc/logo.gif?m='+kRisMId+'&s='+kRisSId+'" /></iframe>';
+        bQuery(document.body).append(iframe);
+    }
+
+    if(typeof bQuery("input[name=l-tm-sid]").val() !== 'undefined' && bQuery("input[name=l-tm-sid]").val != '') {
+        var lTmSId = bQuery("input[name=l-tm-sid]").val();
+        var lTmOId = bQuery("input[name=org_id]").val();
+        var lTmPId = bQuery("input[name=pageid]").val();
+        var qdata = "org_id="+lTmOId+"&session_id="+lTmSId+"&pageid="+lTmPId;
+        bQuery.ajax({
+            url: 'https://h.online-metrix.net/fp/tags.js',
+            data: qdata,
+            dataType: 'script',
+            async: true
+        });
+    }
+
+});
+
+
+/*****************************************************
+*   match.js
+*   Javascript used on contribution/match forms
+*
+*****************************************************/
+
+BSD.contribution.update_matcher_display_name = function(){
+    var firstname = bQuery('#firstname').val();
+    var lastname = bQuery('#lastname').val();
+    var city = bQuery('#city').val();
+    var state = bQuery('#state_cd').val();
+    var matcher_display_name = firstname + " " + lastname.slice(0,1) + "., " + city + ", " + state;
+    if(firstname.length > 0 && lastname.length > 0 && city.length > 0 && state.length > 0){
+        bQuery('#bsd-matcher-preview-label, #bsd-matcher-preview-name').show();
+        bQuery('#bsd-matcher-preview-empty').hide();
+        bQuery('#bsd-matcher-preview-name').html(matcher_display_name);
+
+        bQuery('#firstname, #lastname, #city').keyup(BSD.contribution.update_matcher_display_name);
+    } else {
+        bQuery('#bsd-matcher-preview-label, #bsd-matcher-preview-name').hide();
+        bQuery('#bsd-matcher-preview-empty').show();
+        bQuery('#firstname, #lastname, #city').unbind('keyup');
+    }
+}
+
+bQuery(function(){
+    if(bQuery('#bsd-matcher-preview-name').length > 0) {
+        bQuery('#firstname, #lastname, #city, #state_cd').change(BSD.contribution.update_matcher_display_name);
+        BSD.contribution.update_matcher_display_name();
+    }
+});
+
+function spud_get(args) {
+    bQuery.bsd.spud("get", args.field, {
+        success : function(values) {
+            if(typeof args.callback == "function")
+                args.callback(values);
+        }
+    });
+}
+var SourceCodes = {
+
+    addFromForm: function(aggregator) {
+        var value = bQuery('input[name=source_codes]').val();
+        aggregator.addArray(typeof value == "string" ? value.split(",") : []);
+    },
+
+    addFromSpud: function(aggregator) {
+        spud_get({
+            field: ['source', 'subsource'],
+            callback: function(values) {
+                aggregator.addObject(values);
+            }
+        });
+    },
+
+    addFromUrl: function(aggregator, queryString) {
+        var values = {};
+        (queryString || window.location.search).replace(
+            new RegExp("([^?=&]+)(=([^&]*))?", "g"),
+            function($0, $1, $2, $3) {
+                values[$1] = decodeURIComponent($3);
+            }
+        );
+        aggregator.addObject(values);
+    },
+
+    setCodesInForm: function(aggregator) {
+        var codes = aggregator.getCodes();
+        if(codes.length > 0) {
+            var input = bQuery('input[name=source_codes]');
+            if(input.size() < 1) {
+                input = bQuery('<input type=\"hidden\" name=\"source_codes\" />');
+                bQuery('#contribution').append(input);
+            }
+            input.val(codes.join(','));
+        }
+    },
+
+    additiveChain: function(chain, completionCallback) {
+        return SourceCodes.chain(chain, completionCallback, function() {
+            this.runChain();
+        });
+    },
+
+    prioritizedChain: function(chain, completionCallback) {
+        return SourceCodes.chain(chain, completionCallback, function() {
+            if(this.codes.length < 1) {
+                this.runChain();
+            } else {
+                this.complete();
+            }
+        });
+    },
+
+    chain: function(chain, completionCallback, addFunc) {
+        return {
+            codes: [],
+
+            getCodes: function() {
+                return this.codes;
+            },
+
+            runChain: function() {
+                (chain.shift() || completionCallback)(this);
+                return this;
+            },
+
+            complete: function() {
+                completionCallback(this);
+            },
+
+            addArray: function(codes) {
+                for(i in codes) {
+                    if(typeof codes[i] == 'string' && bQuery.inArray(codes[i], this.codes) === -1) {
+                        this.codes.push(codes[i]);
+                    }
+                }
+                addFunc.apply(this);
+                return this;
+            },
+
+            addObject: function(values) {
+                this.addArray([values.source, values.subsource]);
+                return this;
+            }
+
+        };
+    }
+
+}
+
+// requires bsd.js and jQuery
+
+BSD.namespace("utils.currency");
+
+BSD.utils.currency = function(locale_fmt) {
+
+    var self = this;
+
+    this.locale_fmt = locale_fmt || {};
+
+    this.fmt_from_str = function(fmt) {
+        // format identical to php's money_format syntax
+        // http://us2.php.net/money_format
+
+        var result = {};
+
+        // ignore leading %
+        if(fmt.charAt(0) == "%") {
+            fmt = fmt.substr(1);
+        }
+
+        // get flags
+        fmt_loop:
+        for(var i=0; i<fmt.length; i++) {
+            switch(fmt.charAt(i)) {
+                case '=':
+                    result.fill_char = fmt.charAt(++i);
+                    break;
+                case '^':
+                    result.grouping = [];
+                    result.mon_grouping = [];
+                    break;
+                case '+':
+                    result.p_sign_posn = 1;
+                    result.n_sign_posn = 1;
+                    break;
+                case '(':
+                    result.p_sign_posn = 0;
+                    result.n_sign_posn = 0;
+                    break;
+                case '!':
+                    result.currency_symbol = "";
+                    result.int_currency_symbol = "";
+                    break;
+                case '-':
+                    result.is_left_justified = true;
+                    break;
+                default:
+                    break fmt_loop;
+            }
+        }
+
+        function _num_from_str(str, pos) {
+            var num = "";
+            while(str.charAt(pos) >= "0" && str.charAt(pos) <= "9") {
+                num += str.charAt(pos++);
+            }
+            return {"pos": pos, "number": new Number(num)};
+        }
+
+        // get width (if any)
+        var parts = _num_from_str(fmt, i);
+        i = parts.pos;
+        result.width = parts.number;
+
+        // get left percision (if any)
+        if(fmt.charAt(i) == "#") {
+            i++;
+            var parts = _num_from_str(fmt, i);
+            i = parts.pos;
+            result.left_precision = parts.number;
+        }
+
+        // get right percision (if any)
+        if(fmt.charAt(i) == ".") {
+            i++;
+            var parts = _num_from_str(fmt, i);
+            i = parts.pos;
+            result.frac_digits = parts.number;
+            result.int_frac_digits = parts.number;
+        }
+
+        switch(fmt.charAt(i)) {
+            case "i":
+                result.is_international = true;
+                break;
+            case "n":
+                result.is_international = false;
+                break;
+            case "%":
+                result.is_percent_sign = true;
+            default:
+                // throw error
+        }
+
+        return result;
+    }
+
+    this.combine_formats = function() {
+        if(arguments.length == 0) {
+            return undefined;
+        }
+
+        var result = arguments[0];
+        for(var i=1; i<arguments.length; i++) {
+            for(j in arguments[i]) {
+                result[j] = arguments[i][j];
+            }
+        }
+
+        return result;
+    }
+
+    this.format_number = function(number, fmt) {
+
+        // TODO:  all formatting regarding percision and alignment
+
+        var user_fmt = self.fmt_from_str(fmt);
+        var number_fmt = self.combine_formats(self.locale_fmt, user_fmt);
+        var p_n = number >= 0 ? "p" : "n";
+        var intl = number_fmt.is_international ? "int_" : "";
+
+        // for the rare case when the string is %% (an escaped percent sign)
+        if(number_fmt.is_percent_sign) {
+            return "%";
+        }
+
+        var money_part = new String(Math.abs(number)).split(".");
+
+        // do thousands grouping
+        money_part[0] = self.group(money_part[0], number_fmt.mon_thousands_sep, number_fmt.mon_grouping);
+
+        // format decimal
+        if(money_part.length < 2) {
+            money_part.push(0);
+        }
+
+        money_part[1] = self.decimal_precision(money_part[1], number_fmt[intl + "frac_digits"]);
+
+        // define parts of the final formatted string
+        var money = {
+            cs: number_fmt.is_international ? number_fmt.int_curr_symbol : number_fmt.currency_symbol,
+            sign: number >= 0 ? number_fmt.positive_sign : number_fmt.negative_sign,
+            number: money_part.join(number_fmt.mon_decimal_point),
+            space: "&nbsp;",
+            left_paren: "(",
+            right_paren: ")"
+        };
+
+        // determine ordering of formatted string parts
+        var order = ["number"];
+
+        // set up the string as if we know the currency symbol (cs) preceeds the number
+        if(number_fmt[p_n + "_sep_by_space"]) {
+            order.unshift("space");
+        }
+        order.unshift("cs");
+
+        // if the currency symbol (cs) actually is suppose to succeed the number just reverse the array order
+        if(!number_fmt[p_n + "_cs_precedes"]) {
+            order.reverse;
+        }
+
+        // handle sign placement
+        switch(number_fmt[p_n + "_sign_posn"]) {
+            case 0:
+                // Parentheses surround the quantity and currency_symbol
+                order.unshift("left_paren");
+                order.push("right_paren");
+                break;
+            case 1:
+                // The sign string precedes the quantity and currency_symbol
+                order.unshift("sign");
+                break
+            case 2:
+                // The sign string succeeds the quantity and currency_symbol
+                order.push("sign");
+                break;
+            case 3:
+                // The sign string immediately precedes the currency_symbol
+                for(var i in order) {
+                    if(order[i] == "cs") {
+                        order.splice(i, 0, "sign");
+                        break;
+                    }
+                }
+
+                break;
+            case 4:
+                // The sign string immediately succeeds the currency_symbol
+                for(var i in order) {
+                    if(order[i] == "cs") {
+                        order.splice(i + 1, 0, "sign");
+                        break;
+                    }
+                }
+                break;
+            default:
+                // throw error
+        }
+
+        // build results from money parts in the order we've compiled
+        var result = "";
+        for(var i=0; i<order.length; i++) {
+            result += money[ order[i] ];
+        }
+
+        return result;
+    }
+
+    this.group = function(number, separator, groupings) {
+        var str = new String(number);
+        var result = "";
+        var pos = str.length;
+
+        while(pos > 0) {
+            if(groupings.length > 0) {
+                group_size = groupings.shift();
+            }
+            if(group_size > 0 && group_size < pos) {
+                pos -= group_size;
+                result = separator + str.substr(pos, group_size) + result;
+            } else {
+                result = str.substr(0, pos) + result;
+                pos = 0;
+            }
+        }
+        return result;
+    }
+
+    this.decimal_precision = function(decimal, digits) {
+        var str = new String(decimal);
+
+        var rounded = Math.round(
+            new Number(
+                '1' + // this lets us keep possible leading zeros
+                str.substr(0, digits) +
+                '.' +
+                str.substr(digits)
+            )
+        );
+
+        var result = new String(rounded).substr(1); // get rid of that leading 1
+
+        // add zero padding to decimal
+        while(result.length < digits) {
+            result += "0";
+        }
+
+        return result;
+    }
+
+    return this;
+}
+
+
+BSD.namespace("utils.currency_manager");
+
+BSD.utils.currency_manager = {
+    currencies : {},
+    load_currency: function(intl_currency_symbol, callback) {
+        var intl_currency_symbol = intl_currency_symbol.toUpperCase();
+        if(this.currencies.intl_currency_symbol == undefined) {
+            var jqHandle = typeof(bQuery) == "function" ? bQuery : jQuery;
+            jqHandle.ajax({
+                url: "/utils/currency/currency_data.php?symbol=" + intl_currency_symbol,
+                dataType: "json",
+                type : "GET",
+                success: function(response) {
+                    BSD.utils.currency_manager.set_currency(intl_currency_symbol, response);
+                    callback.success(response);
+                },
+                error: function(response) {
+                    callback.failure(response);
+                }
+            });
+        }
+    },
+    set_currency: function(intl_currency_symbol, data) {
+        this.currencies[intl_currency_symbol] = data;
+    },
+    get_currency: function(intl_currency_symbol) {
+        return this.currencies[intl_currency_symbol];
+    }
+};
+
+BSD.addFormError = function(reference, message){
+    if(!BSD.errors) {
+        BSD.errors = [];
+    }
+
+    BSD.errors.push({"reference" : reference, "message" : message});
+};

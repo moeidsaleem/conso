@@ -1,0 +1,18 @@
+$(document).ready(function() {
+    $('.social-toggle').click(function() {
+        $(this).toggleClass('active');
+        $('.social-visible, .social-toggle-box').toggleClass('active');
+
+    });
+    //Mobile Social Toggle
+    $('.navbar-toggle').click(function() {
+        $(this).toggleClass('active');
+        $('.mobile-nav').slideToggle();
+    });
+    $(window).resize(function() {
+        if ($(window).width() > 768) {
+            $('.mobile-nav').hide();
+            $('.navbar-toggle').removeClass('active');
+        }
+    });
+});
